@@ -43,22 +43,22 @@ export class RamblyManager {
         break;
 
       case "peer_join":
-        this.state.peers.set(ev.id, { id: ev.id, name: ev.name, position: { x: ev.x, y: ev.y } });
+        this.state.peers.set(ev.id, { id: ev.id, name: ev.name, position: ev.position });
         break;
 
       case "peer_moved": {
         const peer = this.state.peers.get(ev.id);
-        if (peer) {
-          peer.position = { x: ev.x, y: ev.y };
+        if (peer && ev.position) {
+          peer.position = ev.position;
         }
         // Record breadcrumb if we're following this peer
-        if (this.state.followTarget) {
+        if (this.state.followTarget && ev.position) {
           const target = this.findPeerByName(this.state.followTarget);
           if (target && target.id === ev.id) {
             const crumbs = this.state.followBreadcrumbs;
             const lastCrumb = crumbs[crumbs.length - 1];
-            if (!lastCrumb || this.distance(lastCrumb, { x: ev.x, y: ev.y }) > 5) {
-              crumbs.push({ x: ev.x, y: ev.y });
+            if (!lastCrumb || this.distance(lastCrumb, ev.position) > 5) {
+              crumbs.push({ ...ev.position });
               if (crumbs.length > 100) crumbs.shift();
             }
           }
@@ -107,8 +107,12 @@ export class RamblyManager {
   }
 
   private handleTranscript(ev: DaemonEvent & { event: "transcript" }) {
-    const peerPos = { x: ev.x, y: ev.y };
-    const dist = this.distance(this.state.position, peerPos);
+    if (!ev.position) {
+      // No position data - let it through anyway
+      this.onTranscript?.(ev.from, ev.name, ev.text, 0);
+      return;
+    }
+    const dist = this.distance(this.state.position, ev.position);
     if (dist <= this.config.hearingRadius) {
       this.onTranscript?.(ev.from, ev.name, ev.text, Math.round(dist));
     }

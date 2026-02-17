@@ -9,10 +9,10 @@ export type DaemonCommand =
 // Daemon events (stdout)
 export type DaemonEvent =
   | { event: "joined"; room: string; peerId: string }
-  | { event: "transcript"; from: string; name: string; text: string; x: number; y: number }
-  | { event: "peer_join"; id: string; name: string; x: number; y: number }
-  | { event: "peer_leave"; id: string; name: string; x: number; y: number }
-  | { event: "peer_moved"; id: string; name: string; x: number; y: number }
+  | { event: "transcript"; from: string; name: string; text: string; position?: { x: number; y: number } }
+  | { event: "peer_join"; id: string; name: string; position?: { x: number; y: number } }
+  | { event: "peer_leave"; id: string; name?: string }
+  | { event: "peer_moved"; id: string; name: string; position?: { x: number; y: number } }
   | { event: "spoke"; text?: string }
   | { event: "moved"; x: number; y: number }
   | { event: "peers"; peers: PeerInfo[] }
