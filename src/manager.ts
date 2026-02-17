@@ -25,6 +25,7 @@ export class RamblyManager {
       peers: new Map(),
       followTarget: null,
       followBreadcrumbs: [],
+      pendingTranscripts: [],
     };
 
     this.daemon.on("event", (ev: DaemonEvent) => this.handleEvent(ev));
@@ -107,15 +108,27 @@ export class RamblyManager {
   }
 
   private handleTranscript(ev: DaemonEvent & { event: "transcript" }) {
-    if (!ev.position) {
-      // No position data - let it through anyway
-      this.onTranscript?.(ev.from, ev.name, ev.text, 0);
-      return;
+    let dist = 0;
+    if (ev.position) {
+      dist = this.distance(this.state.position, ev.position);
+      if (dist > this.config.hearingRadius) {
+        // Too far away, ignore
+        return;
+      }
     }
-    const dist = this.distance(this.state.position, ev.position);
-    if (dist <= this.config.hearingRadius) {
-      this.onTranscript?.(ev.from, ev.name, ev.text, Math.round(dist));
+    
+    // Store transcript for later retrieval
+    this.state.pendingTranscripts.push({
+      name: ev.name,
+      text: ev.text,
+      time: Date.now(),
+    });
+    // Keep only last 10 transcripts
+    if (this.state.pendingTranscripts.length > 10) {
+      this.state.pendingTranscripts.shift();
     }
+    
+    this.onTranscript?.(ev.from, ev.name, ev.text, Math.round(dist));
   }
 
   private distance(a: { x: number; y: number }, b: { x: number; y: number }): number {
@@ -238,7 +251,23 @@ export class RamblyManager {
       ...nearbyPeers,
     ];
 
+    // Add recent transcripts
+    if (this.state.pendingTranscripts.length > 0) {
+      lines.push(`Recent transcripts:`);
+      for (const t of this.state.pendingTranscripts) {
+        lines.push(`  ${t.name}: "${t.text}"`);
+      }
+    }
+
     return lines.join("\n");
+  }
+  
+  clearTranscripts(): void {
+    this.state.pendingTranscripts = [];
+  }
+  
+  getRoom(): string | null {
+    return this.state.room;
   }
 
   // --- Follow Mode ---

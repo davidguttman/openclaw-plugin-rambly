@@ -1,4 +1,5 @@
 import { RamblyManager } from "./src/manager.ts";
+import { generateRamblyResponse } from "./src/response-generator.ts";
 import type { RamblyPluginConfig } from "./src/types.ts";
 
 export default {
@@ -44,21 +45,54 @@ export default {
   register(api: any) {
     const pluginConfig: Partial<RamblyPluginConfig> = api.config?.plugins?.entries?.rambly?.config || {};
     const manager = new RamblyManager(pluginConfig);
+    const coreConfig = api.config;
+    const logger = api.logger;
+    
+    // Track if we're currently generating a response (prevent overlap)
+    let responding = false;
 
-    // Wire up transcript handler to inject messages into agent
-    manager.setTranscriptHandler((from, name, text, distance) => {
-      const distLabel = distance > 0 ? ` (${distance} units away)` : "";
-      const prompt = `[Rambly] ${name}${distLabel}: ${text}`;
-
-      // Use gateway method to inject as user context if available,
-      // otherwise the transcript is available via status
-      if (api.runEmbeddedPiAgent) {
-        api.runEmbeddedPiAgent({
-          prompt,
-          timeoutMs: 30000,
-        }).catch(() => {
-          // Agent invocation failed, transcript still logged
+    // Wire up transcript handler with auto-response
+    manager.setTranscriptHandler(async (from, name, text, distance) => {
+      const logMsg = `[Rambly] ${name}: ${text}`;
+      logger?.info(logMsg);
+      
+      // Skip if already responding
+      if (responding) {
+        logger?.info(`[Rambly] Skipping response (already responding)`);
+        return;
+      }
+      
+      // Generate and speak response
+      responding = true;
+      try {
+        const roomName = manager.getRoom();
+        if (!roomName) {
+          logger?.warn(`[Rambly] No room connected, skipping response`);
+          return;
+        }
+        
+        logger?.info(`[Rambly] Generating response to: "${text}"`);
+        
+        const result = await generateRamblyResponse({
+          coreConfig,
+          roomName,
+          userMessage: text,
+          userName: name,
         });
+        
+        if (result.error) {
+          logger?.error(`[Rambly] Response error: ${result.error}`);
+          return;
+        }
+        
+        if (result.text) {
+          logger?.info(`[Rambly] Speaking: "${result.text}"`);
+          await manager.speak(result.text);
+        }
+      } catch (err) {
+        logger?.error(`[Rambly] Response failed: ${err}`);
+      } finally {
+        responding = false;
       }
     });
 

@@ -34,6 +34,7 @@ export interface RamblyState {
   peers: Map<string, PeerInfo>;
   followTarget: string | null;
   followBreadcrumbs: Array<{ x: number; y: number }>;
+  pendingTranscripts: Array<{ name: string; text: string; time: number }>;
 }
 
 export interface RamblyPluginConfig {
