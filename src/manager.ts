@@ -306,8 +306,12 @@ export class RamblyManager {
 
       const dist = this.distance(this.state.position, target.position);
 
-      // Already close enough
-      if (dist <= this.config.followDistance) return;
+      // Already close enough - stop walking animation
+      if (dist <= this.config.followDistance) {
+        // Send step=0 to stop walking animation
+        this.daemon.send({ action: "move", x: this.state.position.x, y: this.state.position.y, step: 0 });
+        return;
+      }
 
       // Move toward the oldest breadcrumb we haven't reached yet
       let nextPoint = crumbs[0] || target.position;
@@ -325,13 +329,17 @@ export class RamblyManager {
 
       if (stepDist < 1) return;
 
-      const step = Math.min(this.config.followStepSize, stepDist);
-      const nx = Math.round(this.state.position.x + (dx / stepDist) * step);
-      const ny = Math.round(this.state.position.y + (dy / stepDist) * step);
+      // Calculate theta (angle pointing toward target)
+      const theta = Math.atan2(dy, dx);
+      
+      const stepSize = Math.min(this.config.followStepSize, stepDist);
+      const nx = Math.round(this.state.position.x + (dx / stepDist) * stepSize);
+      const ny = Math.round(this.state.position.y + (dy / stepDist) * stepSize);
 
-      this.daemon.send({ action: "move", x: nx, y: ny });
+      // Send move with theta and step=1 for walking animation
+      this.daemon.send({ action: "move", x: nx, y: ny, theta, step: 1 });
       this.state.position = { x: nx, y: ny };
-    }, 500);
+    }, 100); // Faster updates (100ms instead of 500ms)
   }
 
   private stopFollowLoop() {

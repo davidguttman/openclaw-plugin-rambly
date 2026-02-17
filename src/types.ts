@@ -1,7 +1,7 @@
 // Daemon commands (stdin)
 export type DaemonCommand =
   | { action: "speak"; text: string }
-  | { action: "move"; x: number; y: number }
+  | { action: "move"; x: number; y: number; theta?: number; step?: number }
   | { action: "peers" }
   | { action: "status" }
   | { action: "leave" };
