@@ -21,6 +21,7 @@ export class RamblyManager {
       connected: false,
       room: null,
       peerId: null,
+      agentName: null,
       position: { x: 250, y: 230 },
       peers: new Map(),
       followTarget: null,
@@ -108,6 +109,11 @@ export class RamblyManager {
   }
 
   private handleTranscript(ev: DaemonEvent & { event: "transcript" }) {
+    // Ignore own transcripts (prevents feedback loop)
+    if (this.state.agentName && ev.name.toLowerCase() === this.state.agentName.toLowerCase()) {
+      return;
+    }
+
     let dist = 0;
     if (ev.position) {
       dist = this.distance(this.state.position, ev.position);
@@ -145,11 +151,16 @@ export class RamblyManager {
   // --- Public API ---
 
   async join(room: string, name?: string): Promise<string> {
+    // Idempotent: if already in this room, just return success
+    if (this.state.connected && this.state.room === room) {
+      return `Already in room "${room}".`;
+    }
     if (this.state.connected) {
       return `Already connected to ${this.state.room}. Leave first.`;
     }
 
     const agentName = name || this.config.defaultName;
+    this.state.agentName = agentName;
     try {
       await this.daemon.spawn(room, {
         name: agentName,

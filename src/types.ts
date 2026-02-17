@@ -30,6 +30,7 @@ export interface RamblyState {
   connected: boolean;
   room: string | null;
   peerId: string | null;
+  agentName: string | null;
   position: { x: number; y: number };
   peers: Map<string, PeerInfo>;
   followTarget: string | null;
