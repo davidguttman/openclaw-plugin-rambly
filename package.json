@@ -1,0 +1,21 @@
+{
+  "name": "openclaw-plugin-rambly",
+  "version": "0.1.0",
+  "description": "OpenClaw plugin for Rambly spatial voice chat",
+  "type": "module",
+  "main": "index.ts",
+  "openclaw": {
+    "extensions": ["./index.ts"],
+    "configSchema": {},
+    "slots": ["tool"],
+    "catalog": {
+      "label": "Rambly Spatial Voice",
+      "description": "Join spatial voice rooms, speak via TTS, move around, and listen to nearby peers in Rambly"
+    }
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0"
+  }
+}
