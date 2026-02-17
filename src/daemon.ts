@@ -11,7 +11,7 @@ export class RamblyDaemon extends EventEmitter {
     return this._ready;
   }
 
-  spawn(room: string, opts: { name: string; command: string }): Promise<void> {
+  spawn(room: string, opts: { name: string; command: string; voice?: string }): Promise<void> {
     if (this.proc) {
       throw new Error("Daemon already running. Leave first.");
     }
@@ -20,6 +20,9 @@ export class RamblyDaemon extends EventEmitter {
       const args = opts.command.split(/\s+/);
       const bin = args.shift()!;
       args.push("daemon", room, "--name", opts.name, "--json");
+      if (opts.voice) {
+        args.push("--voice", opts.voice);
+      }
 
       this.proc = spawn(bin, args, {
         stdio: ["pipe", "pipe", "pipe"],

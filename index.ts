@@ -33,6 +33,11 @@ export default {
         default: "Agent",
         description: "Default display name when joining a room",
       },
+      voice: {
+        type: "string",
+        default: "nova",
+        description: "OpenAI TTS voice to use for speech (e.g. nova, alloy, echo, fable, onyx, shimmer)",
+      },
     },
   },
 

@@ -43,8 +43,28 @@ export class RamblyManager {
         break;
 
       case "peer_join":
-        this.state.peers.set(ev.id, { id: ev.id, name: ev.name });
+        this.state.peers.set(ev.id, { id: ev.id, name: ev.name, position: { x: ev.x, y: ev.y } });
         break;
+
+      case "peer_moved": {
+        const peer = this.state.peers.get(ev.id);
+        if (peer) {
+          peer.position = { x: ev.x, y: ev.y };
+        }
+        // Record breadcrumb if we're following this peer
+        if (this.state.followTarget) {
+          const target = this.findPeerByName(this.state.followTarget);
+          if (target && target.id === ev.id) {
+            const crumbs = this.state.followBreadcrumbs;
+            const lastCrumb = crumbs[crumbs.length - 1];
+            if (!lastCrumb || this.distance(lastCrumb, { x: ev.x, y: ev.y }) > 5) {
+              crumbs.push({ x: ev.x, y: ev.y });
+              if (crumbs.length > 100) crumbs.shift();
+            }
+          }
+        }
+        break;
+      }
 
       case "peer_leave":
         this.state.peers.delete(ev.id);
@@ -57,6 +77,15 @@ export class RamblyManager {
         break;
 
       case "peers":
+        this.state.peers.clear();
+        for (const p of ev.peers) {
+          this.state.peers.set(p.id, p);
+        }
+        break;
+
+      case "status":
+        this.state.room = ev.room;
+        this.state.position = ev.position;
         this.state.peers.clear();
         for (const p of ev.peers) {
           this.state.peers.set(p.id, p);
@@ -78,14 +107,8 @@ export class RamblyManager {
   }
 
   private handleTranscript(ev: DaemonEvent & { event: "transcript" }) {
-    const peer = this.state.peers.get(ev.from);
-    if (!peer?.position) {
-      // No position data yet - let it through (peer might be new)
-      this.onTranscript?.(ev.from, ev.name, ev.text, 0);
-      return;
-    }
-
-    const dist = this.distance(this.state.position, peer.position);
+    const peerPos = { x: ev.x, y: ev.y };
+    const dist = this.distance(this.state.position, peerPos);
     if (dist <= this.config.hearingRadius) {
       this.onTranscript?.(ev.from, ev.name, ev.text, Math.round(dist));
     }
@@ -114,6 +137,7 @@ export class RamblyManager {
       await this.daemon.spawn(room, {
         name: agentName,
         command: this.config.daemonCommand,
+        voice: this.config.voice,
       });
       // Request initial peer list
       this.daemon.send({ action: "peers" });
@@ -185,8 +209,8 @@ export class RamblyManager {
       return "Not connected to any room.";
     }
 
-    // Refresh peer list
-    this.daemon.send({ action: "peers" });
+    // Refresh state from daemon
+    this.daemon.send({ action: "status" });
     // Small delay for response
     await new Promise((r) => setTimeout(r, 300));
 
