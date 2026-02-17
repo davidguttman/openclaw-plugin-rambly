@@ -1,0 +1,48 @@
+{
+  "id": "rambly",
+  "name": "Rambly Spatial Voice",
+  "description": "Join Rambly spatial voice rooms, speak via TTS, and listen to nearby users",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "hearingRadius": {
+        "type": "number",
+        "default": 150,
+        "description": "Distance (in map units) within which the agent can hear peer speech"
+      },
+      "defaultName": {
+        "type": "string",
+        "default": "Haku",
+        "description": "Default display name when joining a room"
+      },
+      "defaultCharacter": {
+        "type": "string",
+        "default": "king",
+        "description": "Sprite character name"
+      },
+      "followDistance": {
+        "type": "number",
+        "default": 50,
+        "description": "How close the agent stops when following a peer"
+      },
+      "followStepSize": {
+        "type": "number",
+        "default": 20,
+        "description": "How many units the agent moves per follow tick"
+      },
+      "voice": {
+        "type": "string",
+        "default": "nova",
+        "description": "OpenAI TTS voice (alloy/echo/fable/onyx/nova/shimmer)"
+      },
+      "daemonCommand": {
+        "type": "string",
+        "default": "npx tsx /home/dguttman/play/web/rambly/.worktrees/cli-client/cli/bin/rambly-client.ts",
+        "description": "Command to spawn the rambly-client daemon"
+      }
+    }
+  },
+  "skills": ["skills/rambly"]
+}
