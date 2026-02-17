@@ -1,5 +1,5 @@
+import { execSync } from "node:child_process";
 import { RamblyManager } from "./src/manager.ts";
-import { generateRamblyResponse } from "./src/response-generator.ts";
 import type { RamblyPluginConfig } from "./src/types.ts";
 
 export default {
@@ -12,32 +12,26 @@ export default {
       hearingRadius: {
         type: "number",
         default: 150,
-        description: "Distance (in map units) within which the agent can hear peer speech",
       },
       followDistance: {
         type: "number",
         default: 40,
-        description: "How close the agent stops when following a peer",
       },
       followStepSize: {
         type: "number",
         default: 20,
-        description: "How many units the agent moves per follow tick",
       },
       daemonCommand: {
         type: "string",
         default: "npx tsx /home/dguttman/play/web/rambly/.worktrees/cli-client/cli/bin/rambly-client.ts",
-        description: "Command to spawn the rambly-client daemon",
       },
       defaultName: {
         type: "string",
         default: "Agent",
-        description: "Default display name when joining a room",
       },
       voice: {
         type: "string",
         default: "nova",
-        description: "OpenAI TTS voice to use for speech (e.g. nova, alloy, echo, fable, onyx, shimmer)",
       },
     },
   },
@@ -45,167 +39,107 @@ export default {
   register(api: any) {
     const pluginConfig: Partial<RamblyPluginConfig> = api.config?.plugins?.entries?.rambly?.config || {};
     const manager = new RamblyManager(pluginConfig);
-    const coreConfig = api.config;
     const logger = api.logger;
     
-    // Track if we're currently generating a response (prevent overlap)
     let responding = false;
 
-    // Wire up transcript handler with auto-response
-    manager.setTranscriptHandler(async (from, name, text, distance) => {
-      const logMsg = `[Rambly] ${name}: ${text}`;
-      logger?.info(logMsg);
+    // Wire up transcript handler - use openclaw agent CLI like the hook does
+    manager.setTranscriptHandler((from, name, text, distance) => {
+      logger?.info(`[Rambly] Heard: ${name}: "${text}"`);
+      console.log(`[Rambly] Heard: ${name}: "${text}"`);
       
-      // Skip if already responding
       if (responding) {
-        logger?.info(`[Rambly] Skipping response (already responding)`);
+        logger?.info(`[Rambly] Skipping (already responding)`);
         return;
       }
       
-      // Generate and speak response
       responding = true;
+      
+      const roomName = manager.getRoom();
+      if (!roomName) {
+        responding = false;
+        return;
+      }
+
+      // Call openclaw agent CLI to get response
+      const prompt = `[Rambly voice chat, room: ${roomName}] ${name} says: "${text}". Respond briefly (1-2 sentences) as if speaking aloud. Do not use markdown or formatting.`;
+      
       try {
-        const roomName = manager.getRoom();
-        if (!roomName) {
-          logger?.warn(`[Rambly] No room connected, skipping response`);
-          return;
-        }
+        logger?.info(`[Rambly] Getting agent response...`);
+        const response = execSync(
+          `openclaw agent --message "${prompt.replace(/"/g, '\\"')}" --no-deliver 2>/dev/null`,
+          { encoding: 'utf8', timeout: 30000 }
+        ).trim();
         
-        logger?.info(`[Rambly] Generating response to: "${text}"`);
-        
-        const result = await generateRamblyResponse({
-          coreConfig,
-          roomName,
-          userMessage: text,
-          userName: name,
-        });
-        
-        if (result.error) {
-          logger?.error(`[Rambly] Response error: ${result.error}`);
-          return;
-        }
-        
-        if (result.text) {
-          logger?.info(`[Rambly] Speaking: "${result.text}"`);
-          await manager.speak(result.text);
+        if (response) {
+          logger?.info(`[Rambly] Speaking: "${response}"`);
+          manager.speak(response).catch(err => {
+            logger?.error(`[Rambly] Speak failed: ${err}`);
+          });
         }
       } catch (err) {
-        logger?.error(`[Rambly] Response failed: ${err}`);
+        logger?.error(`[Rambly] Agent call failed: ${err}`);
       } finally {
         responding = false;
       }
     });
 
-    // Register the rambly_room tool
+    // Register tool
     api.registerTool(
       {
         name: "rambly_room",
-        description: [
-          "Interact with Rambly spatial voice chat rooms.",
-          "Actions: join, leave, speak, move, follow, unfollow, status, list.",
-          "Join a room to speak via TTS and hear nearby peers.",
-          "Use follow to track a user's position. Proximity determines what you can hear.",
-        ].join(" "),
+        description: "Interact with Rambly spatial voice chat rooms. Actions: join, leave, speak, move, follow, unfollow, status, list.",
         parameters: {
           type: "object",
           properties: {
-            action: {
-              type: "string",
-              enum: ["join", "leave", "speak", "move", "follow", "unfollow", "status", "list"],
-              description: "The action to perform",
-            },
-            room: {
-              type: "string",
-              description: "Room to join (e.g. forest:my-room). Required for 'join'.",
-            },
-            name: {
-              type: "string",
-              description: "Display name when joining. Optional for 'join', required for 'follow'.",
-            },
-            text: {
-              type: "string",
-              description: "Text to speak via TTS. Required for 'speak'.",
-            },
-            x: {
-              type: "number",
-              description: "X coordinate. Required for 'move'.",
-            },
-            y: {
-              type: "number",
-              description: "Y coordinate. Required for 'move'.",
-            },
+            action: { type: "string", enum: ["join", "leave", "speak", "move", "follow", "unfollow", "status", "list"] },
+            room: { type: "string" },
+            name: { type: "string" },
+            text: { type: "string" },
+            x: { type: "number" },
+            y: { type: "number" },
           },
           required: ["action"],
         },
         async execute(_id: string, params: any) {
           let result: string;
-
           switch (params.action) {
             case "join":
-              if (!params.room) {
-                result = "Error: 'room' parameter is required for join (e.g. forest:my-room).";
-              } else {
-                result = await manager.join(params.room, params.name);
-              }
+              result = params.room ? await manager.join(params.room, params.name) : "Error: room required";
               break;
-
             case "leave":
               result = await manager.leave();
               break;
-
             case "speak":
-              if (!params.text) {
-                result = "Error: 'text' parameter is required for speak.";
-              } else {
-                result = await manager.speak(params.text);
-              }
+              result = params.text ? await manager.speak(params.text) : "Error: text required";
               break;
-
             case "move":
-              if (params.x == null || params.y == null) {
-                result = "Error: 'x' and 'y' parameters are required for move.";
-              } else {
-                result = await manager.move(params.x, params.y);
-              }
+              result = (params.x != null && params.y != null) ? await manager.move(params.x, params.y) : "Error: x,y required";
               break;
-
             case "follow":
-              if (!params.name) {
-                result = "Error: 'name' parameter is required for follow.";
-              } else {
-                result = await manager.follow(params.name);
-              }
+              result = params.name ? await manager.follow(params.name) : "Error: name required";
               break;
-
             case "unfollow":
               result = await manager.unfollow();
               break;
-
             case "status":
             case "list":
               result = await manager.status();
               break;
-
             default:
-              result = `Unknown action: ${params.action}. Use: join, leave, speak, move, follow, unfollow, status, list.`;
+              result = `Unknown action: ${params.action}`;
           }
-
           return { content: [{ type: "text", text: result }] };
         },
       },
       { optional: false },
     );
 
-    // Register cleanup service
     api.registerService({
       id: "rambly-lifecycle",
       name: "Rambly Lifecycle",
-      async start() {
-        // Nothing to start proactively - daemon starts on join
-      },
-      async stop() {
-        await manager.leave();
-      },
+      async start() {},
+      async stop() { await manager.leave(); },
     });
   },
 };
