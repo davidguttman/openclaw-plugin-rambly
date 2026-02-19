@@ -102,38 +102,6 @@ export default {
       return undefined; // Not a command
     }
 
-    function extractAgentResponse(output: string): string | null {
-      const trimmed = output.trim();
-      if (!trimmed) return null;
-
-      const jsonStart = trimmed.indexOf("{");
-      const jsonEnd = trimmed.lastIndexOf("}");
-      if (jsonStart !== -1 && jsonEnd > jsonStart) {
-        const jsonSlice = trimmed.slice(jsonStart, jsonEnd + 1);
-        try {
-          const parsed = JSON.parse(jsonSlice) as {
-            result?: { payloads?: Array<{ text?: string; isError?: boolean }> };
-          };
-          const texts = (parsed.result?.payloads || [])
-            .filter((p) => p.text && !p.isError)
-            .map((p) => p.text?.trim())
-            .filter(Boolean);
-          const text = texts.join(" ").trim();
-          return text || null;
-        } catch {
-          // fall through to plain-text fallback
-        }
-      }
-
-      const lines = trimmed
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .filter((line) => line.toLowerCase() !== "completed");
-      if (!lines.length) return null;
-      return lines.join(" ");
-    }
-
     async function processQueue() {
       if (processingQueue) return;
       processingQueue = true;
@@ -156,24 +124,16 @@ export default {
               await manager.speak(cmdResponse);
             }
           } else {
-            const prompt = `[Rambly voice chat, room: ${roomName}] ${name} says: "${text}". Respond briefly (1-2 sentences) as if speaking aloud. Do not use markdown or formatting. You may use tools to answer, but do not call rambly_room. Always include a short spoken reply in plain text.`;
+            const prompt = `[Rambly voice chat, room: ${roomName}] ${name} says: "${text}". Respond briefly (1-2 sentences) as if speaking aloud. Do not use markdown or formatting. respond using the rambly_room tool speak command.`;
 
             try {
               logger?.info(`[Rambly] Getting agent response...`);
               const sessionId = `agent:${DEFAULT_AGENT_ID}:rambly:room:${roomName}`;
-              const { stdout } = await execFileAsync(
+              await execFileAsync(
                 "openclaw",
-                ["agent", "--session-id", sessionId, "--message", prompt, "--json"],
+                ["agent", "--session-id", sessionId, "--message", prompt],
                 { encoding: "utf8", timeout: 30000, maxBuffer: 1024 * 1024 },
               );
-              const response = extractAgentResponse(stdout);
-
-              if (response) {
-                logger?.info(`[Rambly] Speaking: "${response}"`);
-                await manager.speak(response);
-              } else {
-                logger?.info(`[Rambly] Agent returned no text.`);
-              }
             } catch (err) {
               logger?.error(`[Rambly] Agent call failed: ${err}`);
             }
