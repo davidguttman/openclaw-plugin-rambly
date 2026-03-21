@@ -110,6 +110,10 @@ export class RamblyManager {
         this.handleTranscript(ev);
         break;
 
+      case "error":
+        this.onError?.(new Error(ev.message));
+        break;
+
       case "left":
         this.cleanup();
         break;
@@ -295,58 +299,63 @@ export class RamblyManager {
     this.stopFollowLoop();
 
     this.followInterval = setInterval(() => {
-      if (!this.state.followTarget || !this.state.connected) {
-        this.stopFollowLoop();
-        return;
+      try {
+        if (!this.state.followTarget || !this.state.connected) {
+          this.stopFollowLoop();
+          return;
+        }
+
+        const target = this.findPeerByName(this.state.followTarget);
+        if (!target?.position) return;
+
+        // Record breadcrumb if target moved
+        const crumbs = this.state.followBreadcrumbs;
+        const lastCrumb = crumbs[crumbs.length - 1];
+        if (!lastCrumb || this.distance(lastCrumb, target.position) > 5) {
+          crumbs.push({ ...target.position });
+          // Keep breadcrumb trail manageable
+          if (crumbs.length > 100) crumbs.shift();
+        }
+
+        const dist = this.distance(this.state.position, target.position);
+
+        // Already close enough - stop walking animation
+        if (dist <= this.config.followDistance) {
+          // Send step=0 to stop walking animation
+          this.daemon.send({ action: "move", x: this.state.position.x, y: this.state.position.y, step: 0 });
+          return;
+        }
+
+        // Move toward the oldest breadcrumb we haven't reached yet
+        let nextPoint = crumbs[0] || target.position;
+
+        // Pop breadcrumbs we've already reached
+        while (crumbs.length > 1 && this.distance(this.state.position, crumbs[0]) < this.config.followStepSize) {
+          crumbs.shift();
+          nextPoint = crumbs[0] || target.position;
+        }
+
+        // Step toward next point
+        const dx = nextPoint.x - this.state.position.x;
+        const dy = nextPoint.y - this.state.position.y;
+        const stepDist = Math.sqrt(dx * dx + dy * dy);
+
+        if (stepDist < 1) return;
+
+        // Calculate theta (angle pointing toward target)
+        const theta = Math.atan2(dy, dx);
+
+        const stepSize = Math.min(this.config.followStepSize, stepDist);
+        const nx = Math.round(this.state.position.x + (dx / stepDist) * stepSize);
+        const ny = Math.round(this.state.position.y + (dy / stepDist) * stepSize);
+
+        // Send move with theta and step=1 for walking animation
+        this.daemon.send({ action: "move", x: nx, y: ny, theta, step: 1 });
+        this.state.position = { x: nx, y: ny };
+      } catch (err) {
+        this.stopFollow();
+        this.onError?.(err instanceof Error ? err : new Error(String(err)));
       }
-
-      const target = this.findPeerByName(this.state.followTarget);
-      if (!target?.position) return;
-
-      // Record breadcrumb if target moved
-      const crumbs = this.state.followBreadcrumbs;
-      const lastCrumb = crumbs[crumbs.length - 1];
-      if (!lastCrumb || this.distance(lastCrumb, target.position) > 5) {
-        crumbs.push({ ...target.position });
-        // Keep breadcrumb trail manageable
-        if (crumbs.length > 100) crumbs.shift();
-      }
-
-      const dist = this.distance(this.state.position, target.position);
-
-      // Already close enough - stop walking animation
-      if (dist <= this.config.followDistance) {
-        // Send step=0 to stop walking animation
-        this.daemon.send({ action: "move", x: this.state.position.x, y: this.state.position.y, step: 0 });
-        return;
-      }
-
-      // Move toward the oldest breadcrumb we haven't reached yet
-      let nextPoint = crumbs[0] || target.position;
-
-      // Pop breadcrumbs we've already reached
-      while (crumbs.length > 1 && this.distance(this.state.position, crumbs[0]) < this.config.followStepSize) {
-        crumbs.shift();
-        nextPoint = crumbs[0] || target.position;
-      }
-
-      // Step toward next point
-      const dx = nextPoint.x - this.state.position.x;
-      const dy = nextPoint.y - this.state.position.y;
-      const stepDist = Math.sqrt(dx * dx + dy * dy);
-
-      if (stepDist < 1) return;
-
-      // Calculate theta (angle pointing toward target)
-      const theta = Math.atan2(dy, dx);
-      
-      const stepSize = Math.min(this.config.followStepSize, stepDist);
-      const nx = Math.round(this.state.position.x + (dx / stepDist) * stepSize);
-      const ny = Math.round(this.state.position.y + (dy / stepDist) * stepSize);
-
-      // Send move with theta and step=1 for walking animation
-      this.daemon.send({ action: "move", x: nx, y: ny, theta, step: 1 });
-      this.state.position = { x: nx, y: ny };
     }, 100); // Faster updates (100ms instead of 500ms)
   }
 

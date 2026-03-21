@@ -17,6 +17,16 @@ export class RamblyDaemon extends EventEmitter {
     }
 
     return new Promise((resolve, reject) => {
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout>;
+
+      function settle(fn: () => void) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        fn();
+      }
+
       const args = opts.command.split(/\s+/);
       const bin = args.shift()!;
       args.push("daemon", room, "--name", opts.name, "--json");
@@ -39,7 +49,7 @@ export class RamblyDaemon extends EventEmitter {
 
           if (event.event === "joined") {
             this._ready = true;
-            resolve();
+            settle(() => resolve());
           }
 
           if (event.event === "error") {
@@ -63,21 +73,22 @@ export class RamblyDaemon extends EventEmitter {
       this.proc.on("error", (err) => {
         this._ready = false;
         this.proc = null;
-        reject(err);
+        settle(() => reject(err));
       });
 
       this.proc.on("exit", (code) => {
         this._ready = false;
         this.proc = null;
         this.emit("exit", code);
+        settle(() => reject(new Error(`Daemon exited with code ${code} before joining`)));
       });
 
       // Timeout if daemon doesn't join within 15s
-      setTimeout(() => {
-        if (!this._ready) {
+      timer = setTimeout(() => {
+        settle(() => {
           reject(new Error("Daemon failed to join room within 15 seconds"));
           this.kill();
-        }
+        });
       }, 15000);
     });
   }

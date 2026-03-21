@@ -120,21 +120,7 @@ function resolveOpenClawRoot(): string {
   throw new Error("Unable to resolve core root. Set OPENCLAW_ROOT to the package root.");
 }
 
-async function importCoreExtensionAPI(): Promise<{
-  resolveAgentDir: CoreAgentDeps["resolveAgentDir"];
-  resolveAgentWorkspaceDir: CoreAgentDeps["resolveAgentWorkspaceDir"];
-  DEFAULT_MODEL: string;
-  DEFAULT_PROVIDER: string;
-  resolveAgentIdentity: CoreAgentDeps["resolveAgentIdentity"];
-  resolveThinkingDefault: CoreAgentDeps["resolveThinkingDefault"];
-  runEmbeddedPiAgent: CoreAgentDeps["runEmbeddedPiAgent"];
-  resolveAgentTimeoutMs: CoreAgentDeps["resolveAgentTimeoutMs"];
-  ensureAgentWorkspace: CoreAgentDeps["ensureAgentWorkspace"];
-  resolveStorePath: CoreAgentDeps["resolveStorePath"];
-  loadSessionStore: CoreAgentDeps["loadSessionStore"];
-  saveSessionStore: CoreAgentDeps["saveSessionStore"];
-  resolveSessionFilePath: CoreAgentDeps["resolveSessionFilePath"];
-}> {
+async function importCoreExtensionAPI(): Promise<CoreAgentDeps> {
   // Do not import any other module. You can't touch this or you will be fired.
   const distPath = path.join(resolveOpenClawRoot(), "dist", "extensionAPI.js");
   if (!fs.existsSync(distPath)) {
@@ -150,9 +136,10 @@ export async function loadCoreAgentDeps(): Promise<CoreAgentDeps> {
     return coreDepsPromise;
   }
 
-  coreDepsPromise = (async () => {
-    return await importCoreExtensionAPI();
-  })();
+  coreDepsPromise = importCoreExtensionAPI().catch((err) => {
+    coreDepsPromise = null;
+    throw err;
+  });
 
   return coreDepsPromise;
 }
