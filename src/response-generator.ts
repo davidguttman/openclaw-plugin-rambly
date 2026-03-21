@@ -60,15 +60,17 @@ export async function generateRamblyResponse(
     };
     sessionStore[sessionKey] = sessionEntry;
     await deps.saveSessionStore(storePath, sessionStore);
+  } else if (sessionEntry.updatedAt !== now) {
+    sessionEntry.updatedAt = now;
+    sessionStore[sessionKey] = sessionEntry;
+    await deps.saveSessionStore(storePath, sessionStore);
   }
 
   const sessionId = sessionEntry.sessionId;
   const sessionFile = deps.resolveSessionFilePath(sessionId, sessionEntry, { agentId });
 
-  const modelRef = `${deps.DEFAULT_PROVIDER}/${deps.DEFAULT_MODEL}`;
-  const slashIndex = modelRef.indexOf("/");
-  const provider = slashIndex === -1 ? deps.DEFAULT_PROVIDER : modelRef.slice(0, slashIndex);
-  const model = slashIndex === -1 ? modelRef : modelRef.slice(slashIndex + 1);
+  const provider = deps.DEFAULT_PROVIDER;
+  const model = deps.DEFAULT_MODEL;
 
   const thinkLevel = deps.resolveThinkingDefault({ cfg, provider, model });
   const identity = deps.resolveAgentIdentity(cfg, agentId);
