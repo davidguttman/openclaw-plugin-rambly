@@ -1,5 +1,5 @@
 {
-  "id": "rambly",
+  "id": "openclaw-plugin-rambly",
   "name": "Rambly Spatial Voice",
   "description": "Join Rambly spatial voice rooms, speak via TTS, and listen to nearby users",
   "version": "0.1.0",

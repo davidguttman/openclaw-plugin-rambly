@@ -13,6 +13,7 @@ export class RamblyManager {
   private state: RamblyState;
   private followInterval: ReturnType<typeof setInterval> | null = null;
   private onTranscript: ((from: string, name: string, text: string, distance: number) => void) | null = null;
+  private onError: ((err: Error) => void) | null = null;
 
   constructor(config: Partial<RamblyPluginConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -30,10 +31,17 @@ export class RamblyManager {
     };
 
     this.daemon.on("event", (ev: DaemonEvent) => this.handleEvent(ev));
+    this.daemon.on("error", (err: Error) => {
+      this.onError?.(err);
+    });
   }
 
   setTranscriptHandler(handler: (from: string, name: string, text: string, distance: number) => void) {
     this.onTranscript = handler;
+  }
+
+  setErrorHandler(handler: (err: Error) => void) {
+    this.onError = handler;
   }
 
   private handleEvent(ev: DaemonEvent) {
