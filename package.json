@@ -5,13 +5,21 @@
   "type": "module",
   "main": "index.ts",
   "openclaw": {
-    "extensions": ["./index.ts"],
+    "extensions": [
+      "./index.ts"
+    ],
     "configSchema": {},
-    "slots": ["tool"],
+    "slots": [
+      "tool"
+    ],
     "catalog": {
       "label": "Rambly Spatial Voice",
       "description": "Join spatial voice rooms, speak via TTS, move around, and listen to nearby peers in Rambly"
     }
+  },
+  "scripts": {
+    "deps:scan": "npx tsx src/dependency-scanner.ts",
+    "deps:audit": "npm audit --json"
   },
   "dependencies": {},
   "devDependencies": {
