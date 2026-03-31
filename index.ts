@@ -1,4 +1,5 @@
-import { execSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { RamblyManager } from "./src/manager.ts";
 import type { RamblyPluginConfig } from "./src/types.ts";
 
@@ -10,8 +11,12 @@ const COMMANDS = {
   leave: /^(?:leave|go away|bye|goodbye|disconnect)$/i,
 };
 
+const execFileAsync = promisify(execFile);
+const DEFAULT_AGENT_ID = "main";
+const PLUGIN_ID = "openclaw-plugin-rambly";
+
 export default {
-  id: "rambly",
+  id: PLUGIN_ID,
   name: "Rambly Spatial Voice",
 
   configSchema: {
@@ -30,14 +35,27 @@ export default {
   },
 
   register(api: any) {
-    const pluginConfig: Partial<RamblyPluginConfig> = api.config?.plugins?.entries?.rambly?.config || {};
+    const pluginEntries = api.config?.plugins?.entries || {};
+    const pluginConfig: Partial<RamblyPluginConfig> =
+      pluginEntries[PLUGIN_ID]?.config || pluginEntries.rambly?.config || {};
     const manager = new RamblyManager(pluginConfig);
     const logger = api.logger;
     
-    let responding = false;
+    type TranscriptItem = {
+      name: string;
+      text: string;
+      roomName: string;
+    };
+
+    const transcriptQueue: TranscriptItem[] = [];
+    let processingQueue = false;
+
+    manager.setErrorHandler((err) => {
+      logger?.error(`[Rambly] Daemon error: ${err.message}`);
+    });
 
     // Try to handle voice command, returns response text if handled
-    async function handleVoiceCommand(speakerName: string, text: string): Promise<string | null> {
+    async function handleVoiceCommand(speakerName: string, text: string): Promise<string | undefined> {
       const trimmed = text.trim();
       
       // "follow me" or "come here"
@@ -78,62 +96,73 @@ export default {
         await manager.speak("Goodbye!");
         await new Promise(r => setTimeout(r, 1500)); // Let TTS finish
         await manager.leave();
-        return null; // Don't speak after leaving
+        return ""; // Don't speak after leaving, but treat as handled
       }
       
-      return null; // Not a command
+      return undefined; // Not a command
+    }
+
+    async function processQueue() {
+      if (processingQueue) return;
+      processingQueue = true;
+      try {
+        while (transcriptQueue.length > 0) {
+          const item = transcriptQueue.shift()!;
+          const currentRoom = manager.getRoom();
+          if (!currentRoom || currentRoom !== item.roomName) {
+            if (!currentRoom) {
+              transcriptQueue.length = 0;
+            }
+            continue;
+          }
+
+          const { name, text, roomName } = item;
+          const cmdResponse = await handleVoiceCommand(name, text);
+          if (cmdResponse !== undefined) {
+            if (cmdResponse) {
+              logger?.info(`[Rambly] Command response: "${cmdResponse}"`);
+              await manager.speak(cmdResponse);
+            }
+          } else {
+            const prompt = `[Rambly voice chat, room: ${roomName}] ${name} says: "${text}". Respond briefly (1-2 sentences) as if speaking aloud. Do not use markdown or formatting. respond using the rambly_room tool speak command.`;
+
+            try {
+              logger?.info(`[Rambly] Getting agent response...`);
+              const sessionId = `agent:${DEFAULT_AGENT_ID}:rambly:room:${roomName}`;
+              await execFileAsync(
+                "openclaw",
+                ["agent", "--session-id", sessionId, "--message", prompt],
+                { encoding: "utf8", timeout: 30000, maxBuffer: 1024 * 1024 },
+              );
+            } catch (err) {
+              logger?.error(`[Rambly] Agent call failed: ${err}`);
+            }
+          }
+
+          if (!manager.getRoom()) {
+            transcriptQueue.length = 0;
+            break;
+          }
+        }
+      } catch (err) {
+        logger?.error(`[Rambly] Queue processing failed: ${err}`);
+      } finally {
+        processingQueue = false;
+        if (transcriptQueue.length > 0) {
+          void processQueue();
+        }
+      }
     }
 
     // Transcript handler with voice commands
-    manager.setTranscriptHandler((from, name, text, distance) => {
+    manager.setTranscriptHandler((_from, name, text, _distance) => {
       logger?.info(`[Rambly] Heard: ${name}: "${text}"`);
-      
-      if (responding) {
-        logger?.info(`[Rambly] Skipping (already responding)`);
-        return;
-      }
-      
-      responding = true;
-      
       const roomName = manager.getRoom();
       if (!roomName) {
-        responding = false;
         return;
       }
-
-      // Try voice command first
-      handleVoiceCommand(name, text).then(async (cmdResponse) => {
-        if (cmdResponse !== null) {
-          // Command was handled
-          if (cmdResponse) {
-            logger?.info(`[Rambly] Command response: "${cmdResponse}"`);
-            await manager.speak(cmdResponse);
-          }
-          return;
-        }
-        
-        // Not a command - generate chat response
-        const prompt = `[Rambly voice chat, room: ${roomName}] ${name} says: "${text}". Respond briefly (1-2 sentences) as if speaking aloud. Do not use markdown or formatting.`;
-        
-        try {
-          logger?.info(`[Rambly] Getting agent response...`);
-          const response = execSync(
-            `openclaw agent --message "${prompt.replace(/"/g, '\\"')}" --no-deliver 2>/dev/null`,
-            { encoding: 'utf8', timeout: 30000 }
-          ).trim();
-          
-          if (response) {
-            logger?.info(`[Rambly] Speaking: "${response}"`);
-            await manager.speak(response);
-          }
-        } catch (err) {
-          logger?.error(`[Rambly] Agent call failed: ${err}`);
-        }
-      }).catch(err => {
-        logger?.error(`[Rambly] Command failed: ${err}`);
-      }).finally(() => {
-        responding = false;
-      });
+      transcriptQueue.push({ name, text, roomName });
+      void processQueue();
     });
 
     // Register tool
